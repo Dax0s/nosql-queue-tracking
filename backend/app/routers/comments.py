@@ -1,0 +1,52 @@
+"""Komentarai ir likai. Atsakingas: žmogus B."""
+
+from typing import Annotated
+
+from fastapi import APIRouter, HTTPException, Query, status
+
+from app.auth.deps import OptionalUser, UserOnly
+from app.models.schemas import CommentCreateIn, CommentOut, CommentsPage
+
+router = APIRouter(tags=["Komentarai"])
+
+_TODO = HTTPException(status.HTTP_501_NOT_IMPLEMENTED, "Dar neįgyvendinta")
+
+
+@router.get(
+    "/queues/{queue_id}/comments",
+    response_model=CommentsPage,
+    summary="Komentarai su ženkleliais (cache 30 s)",
+)
+async def list_comments(queue_id: str, user: OptionalUser, page: Annotated[int, Query(ge=1)] = 1):
+    # TODO(B): cache:queue:{id}:comments:{page}, ženkleliai iš cache:badges
+    raise _TODO
+
+
+@router.post(
+    "/queues/{queue_id}/comments",
+    response_model=CommentOut,
+    status_code=201,
+    summary="Naujas komentaras (max 5 per minutę)",
+)
+async def create_comment(queue_id: str, body: CommentCreateIn, user: UserOnly):
+    # TODO(B): rl:comment:{user_id} (429), insert, comment_count++, add_weight(..., "comment"),
+    # invalidate_queue, track_event("comment_created")
+    raise _TODO
+
+
+@router.delete("/comments/{comment_id}", status_code=204, summary="Ištrinti savo komentarą")
+async def delete_comment(comment_id: str, user: UserOnly):
+    # TODO(B): tik autorius (403); trinti likus, comment_count--, total_likes -= likes_count
+    raise _TODO
+
+
+@router.post("/comments/{comment_id}/like", status_code=201, summary="Palikinti komentarą")
+async def like_comment(comment_id: str, user: UserOnly):
+    # TODO(B): savo komentaro negalima (400), unikalus indeksas -> 409,
+    # likes_count++, total_likes++, track_event("comment_liked")
+    raise _TODO
+
+
+@router.delete("/comments/{comment_id}/like", status_code=204, summary="Atšaukti liką")
+async def unlike_comment(comment_id: str, user: UserOnly):
+    raise _TODO

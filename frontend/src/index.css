@@ -1,0 +1,12 @@
+* { box-sizing: border-box; }
+html, body, #root { height: 100%; margin: 0; }
+body { font-family: system-ui, sans-serif; color: #1f2933; }
+
+.layout { display: flex; flex-direction: column; height: 100%; }
+.navbar { display: flex; align-items: center; gap: 16px; padding: 10px 16px; border-bottom: 1px solid #d9dee3; }
+.navbar .brand { font-weight: 700; margin-right: auto; text-decoration: none; color: inherit; }
+.content { flex: 1; min-height: 0; position: relative; }
+.page { padding: 24px; max-width: 720px; margin: 0 auto; }
+
+.map { height: 100%; width: 100%; }
+.queue-panel { position: absolute; top: 0; right: 0; z-index: 1000; width: 360px; max-width: 100%; height: 100%; padding: 16px; background: #fff; border-left: 1px solid #d9dee3; overflow-y: auto; }
