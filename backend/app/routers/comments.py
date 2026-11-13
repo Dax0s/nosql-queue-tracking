@@ -91,9 +91,9 @@ async def _load_comments_page(queue_id: str, page: int) -> dict:
 async def get_badges() -> list[dict]:
     """Ženklelių lygiai, nuo didžiausio (cache:badges, 1 h)."""
     badges = await cache_get("cache:badges")
-    if badges is None:
+    if badges is None: #TODO: zenkleliai nelabai keiciasi kodel tik vienai valandai cache?
         badges = await get_db().badges.find({}, {"_id": 0}).sort("min_likes", -1).to_list(None)
-        await cache_set("cache:badges", badges, settings.cache_ttl_badges)
+        await cache_set("cache:badges", badges, settings.cache_ttl_badges) 
     return badges
 
 
