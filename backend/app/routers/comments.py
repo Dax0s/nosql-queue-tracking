@@ -11,9 +11,9 @@ from pymongo.errors import DuplicateKeyError
 from app.auth.deps import OptionalUser, UserOnly
 from app.db.mongo import get_db
 from app.db.redis import get_redis
-from app.models.schemas import CommentCreateIn, CommentOut, CommentsPage
+from app.models.schemas import BadgeOut, CommentCreateIn, CommentOut, CommentsPage
 from app.config import settings
-from app.services.cache import cache_delete, invalidate_queue
+from app.services.cache import cache_delete, cache_get, cache_set, invalidate_queue
 
 router = APIRouter(tags=["Komentarai"])
 
@@ -26,8 +26,83 @@ _TODO = HTTPException(status.HTTP_501_NOT_IMPLEMENTED, "Dar neįgyvendinta")
     summary="Komentarai su ženkleliais (cache 30 s)",
 )
 async def list_comments(queue_id: str, user: OptionalUser, page: Annotated[int, Query(ge=1)] = 1):
-    # TODO(B): cache:queue:{id}:comments:{page}, ženkleliai iš cache:badges
-    raise _TODO
+    # Naujausi pirmi. Bendra dalis cache'inama 30 s, liked_by_me pridedamas kiekvienai užklausai
+    if not ObjectId.is_valid(queue_id):
+        raise HTTPException(404, "Eilė nerasta")
+
+    key = f"cache:queue:{queue_id}:comments:{page}"
+    data = await cache_get(key)
+    if data is None:
+        data = await _load_comments_page(queue_id, page)
+        await cache_set(key, data, settings.cache_ttl_comments)
+
+    result = CommentsPage(**data)
+    if user is not None and result.items:
+        liked = await get_db().comment_likes.distinct("comment_id", {
+            "user_id": ObjectId(user.user_id),
+            "comment_id": {"$in": [ObjectId(c.id) for c in result.items]},
+        })
+        liked_ids = {str(i) for i in liked}
+        for c in result.items:
+            c.liked_by_me = c.id in liked_ids
+    return result
+
+
+async def _load_comments_page(queue_id: str, page: int) -> dict:
+    """Komentarų puslapis iš MongoDB su autorių vardais ir ženkleliais (be vartotojo būsenos)."""
+    db = get_db()
+    qid = ObjectId(queue_id)
+    if await db.queues.find_one({"_id": qid}, {"_id": 1}) is None:
+        raise HTTPException(404, "Eilė nerasta")
+
+    size = settings.comments_page_size
+    # Imam vienu daugiau, kad sužinotume, ar yra kitas puslapis
+    docs = await (
+        db.comments.find({"queue_id": qid})
+        .sort("created_at", -1)
+        .skip((page - 1) * size)
+        .limit(size + 1)
+        .to_list(None)
+    )
+    has_more = len(docs) > size
+    docs = docs[:size]
+
+    author_ids = list({d["user_id"] for d in docs})
+    authors = {
+        a["_id"]: a
+        async for a in db.users.find(
+            {"_id": {"$in": author_ids}}, {"first_name": 1, "last_name": 1, "total_likes": 1}
+        )
+    }
+    badges = await get_badges()
+
+    items = []
+    for d in docs:
+        a = authors.get(d["user_id"])
+        items.append(CommentOut(
+            id=str(d["_id"]), queue_id=queue_id, user_id=str(d["user_id"]),
+            author_name=f"{a['first_name']} {a['last_name'][0]}." if a else "Ištrintas vartotojas",
+            badge=badge_for(a.get("total_likes", 0) if a else 0, badges),
+            text=d["text"], likes_count=d.get("likes_count", 0), created_at=d["created_at"],
+        ))
+    return CommentsPage(items=items, page=page, has_more=has_more).model_dump(mode="json")
+
+
+async def get_badges() -> list[dict]:
+    """Ženklelių lygiai, nuo didžiausio (cache:badges, 1 h)."""
+    badges = await cache_get("cache:badges")
+    if badges is None:
+        badges = await get_db().badges.find({}, {"_id": 0}).sort("min_likes", -1).to_list(None)
+        await cache_set("cache:badges", badges, settings.cache_ttl_badges)
+    return badges
+
+
+def badge_for(total_likes: int, badges: list[dict]) -> BadgeOut | None:
+    """Aukščiausias ženklelis, kurio min_likes <= total_likes."""
+    for b in badges:  # surikiuota nuo didžiausio
+        if b["min_likes"] <= total_likes:
+            return BadgeOut(**b)
+    return None
 
 
 @router.post(
