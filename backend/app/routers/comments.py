@@ -74,8 +74,30 @@ async def create_comment(queue_id: str, body: CommentCreateIn, user: UserOnly):
 
 @router.delete("/comments/{comment_id}", status_code=204, summary="Ištrinti savo komentarą")
 async def delete_comment(comment_id: str, user: UserOnly):
-    # TODO(B): tik autorius (403); trinti likus, comment_count--, total_likes -= likes_count
-    raise _TODO
+    # Tik autorius (403); trina likus, comment_count--, total_likes -= likes_count
+    if not ObjectId.is_valid(comment_id):
+        raise HTTPException(404, "Komentaras nerastas")
+    
+    db = get_db()
+    oid = ObjectId(comment_id)
+    author_id = ObjectId(user.user_id)                     
+
+    doc = await db.comments.find_one_and_delete({"_id": oid, "user_id": author_id}) ##TODO: adminas negali nutrint kito komentaro lol
+    if doc is None:
+        exists = await db.comments.find_one({"_id": oid}, {"_id": 1})
+        if exists is None:
+            raise HTTPException(404, "Komentaras nerastas")
+        raise HTTPException(403, "Negali trinti kito komentaro")
+
+    await db.comment_likes.delete_many({"comment_id": oid}) #TODO: tame paciame dokumente padarysim galbut?
+    await db.queues.update_one({"_id": doc["queue_id"]}, {"$inc": {"comment_count": -1}})
+    if doc.get("likes_count", 0):
+        await db.users.update_one(
+            {"_id": author_id}, {"$inc": {"total_likes": -doc["likes_count"]}}
+        )
+    await invalidate_queue(str(doc["queue_id"]))
+
+    
 
 
 @router.post("/comments/{comment_id}/like", status_code=201, summary="Palikinti komentarą")
