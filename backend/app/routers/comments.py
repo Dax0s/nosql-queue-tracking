@@ -1,11 +1,17 @@
 """Komentarai ir likai. Atsakingas: žmogus B."""
 
+from datetime import datetime, timezone
 from typing import Annotated
 
+from bson import ObjectId
 from fastapi import APIRouter, HTTPException, Query, status
 
 from app.auth.deps import OptionalUser, UserOnly
+from app.db.mongo import get_db
+from app.db.redis import get_redis
 from app.models.schemas import CommentCreateIn, CommentOut, CommentsPage
+from app.config import settings
+from app.services.cache import invalidate_queue
 
 router = APIRouter(tags=["Komentarai"])
 
@@ -31,7 +37,39 @@ async def list_comments(queue_id: str, user: OptionalUser, page: Annotated[int, 
 async def create_comment(queue_id: str, body: CommentCreateIn, user: UserOnly):
     # TODO(B): rl:comment:{user_id} (429), insert, comment_count++, add_weight(..., "comment"),
     # invalidate_queue, track_event("comment_created")
-    raise _TODO
+    db, r = get_db(), get_redis()
+    if not ObjectId.is_valid(queue_id):
+        raise HTTPException(404, "Eilė nerasta")
+    queue = await db.queues.find_one({"_id": ObjectId(queue_id)})
+    if queue is None:
+        raise HTTPException(404, "Eilė nerasta")
+
+    key = f"rl:comment:{user.user_id}"
+    count = await r.incr(key)
+    if count == 1:
+        await r.expire(key, settings.comment_rate_window_sec)
+    if count > settings.comment_rate_limit:
+        raise HTTPException(429, "Per daug komentarų, palauk minutę")
+    #add comment
+    now = datetime.now(timezone.utc)
+    doc = {"queue_id": queue["_id"], "user_id": ObjectId(user.user_id),
+           "text": body.text, "likes_count": 0, "created_at": now}
+    result = await db.comments.insert_one(doc)
+
+    # queue counters 
+    await db.queues.update_one({"_id": queue["_id"]}, {"$inc": {"comment_count": 1}})
+    await invalidate_queue(queue_id)
+
+    #TODO turi padideti svoris
+
+    author = await db.users.find_one({"_id": ObjectId(user.user_id)})
+    
+    return CommentOut(
+        id=str(result.inserted_id), queue_id=queue_id, user_id=user.user_id,
+        author_name=f"{author['first_name']} {author['last_name'][0]}.",
+        badge=None,  # TODO: look up from badges by author["total_likes"]
+        text=body.text, likes_count=0, created_at=now,
+    )
 
 
 @router.delete("/comments/{comment_id}", status_code=204, summary="Ištrinti savo komentarą")
