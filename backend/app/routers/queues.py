@@ -1,5 +1,6 @@
 """Eilės ir žemėlapis. Atsakingas: žmogus A."""
 
+import math
 from datetime import datetime, timedelta, timezone
 from typing import Annotated
 
@@ -10,6 +11,7 @@ from app.auth.deps import OptionalUser, UserOnly
 from app.config import settings
 from app.db.mongo import get_db
 from app.models.schemas import MapPoint, QueueCreateIn, QueueOut
+from app.services.cache import cache_get, cache_set
 from app.services.events import track_event
 
 router = APIRouter(prefix="/queues", tags=["Eilės ir žemėlapis"])
@@ -17,8 +19,30 @@ router = APIRouter(prefix="/queues", tags=["Eilės ir žemėlapis"])
 _TODO = HTTPException(status.HTTP_501_NOT_IMPLEMENTED, "Dar neįgyvendinta")
 
 
-# Turi būti aukščiau už /{queue_id}
-@router.get("/map", response_model=list[MapPoint], summary="Žemėlapio taškai (cache 30 s)")
+def _snap_bbox(
+    min_lat: float, min_lng: float, max_lat: float, max_lng: float, zoom: int
+) -> tuple[float, float, float, float]:
+    cell = 360 / 2**zoom
+    return (
+        max(-90.0, math.floor(min_lat / cell) * cell),
+        max(-180.0, math.floor(min_lng / cell) * cell),
+        min(90.0, math.ceil(max_lat / cell) * cell),
+        min(180.0, math.ceil(max_lng / cell) * cell),
+    )
+
+
+def _current_weight(doc: dict, now: datetime) -> float:
+    minutes = (now - doc["weight_updated_at"]).total_seconds() / 60
+    return max(0.0, doc["weight"] - settings.weight_decay_per_min * minutes)
+
+
+# Must be declared before /{queue_id}
+@router.get(
+    "/map",
+    response_model=list[MapPoint],
+    summary="Map points (cached for 30 s)",
+    responses={422: {"description": "Invalid bounding box"}},
+)
 async def get_map(
     min_lat: Annotated[float, Query(ge=-90, le=90)],
     min_lng: Annotated[float, Query(ge=-180, le=180)],
@@ -26,9 +50,39 @@ async def get_map(
     max_lng: Annotated[float, Query(ge=-180, le=180)],
     zoom: Annotated[int, Query(ge=0, le=20)],
 ):
-    # TODO(A): bbox apvalinimas iki tinklelio, cache:map:{zoom}:{bbox_hash},
-    # $geoWithin + expires_at > dabar
-    raise _TODO
+    if min_lat > max_lat or min_lng > max_lng:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Invalid bounding box")
+
+    south, west, north, east = _snap_bbox(min_lat, min_lng, max_lat, max_lng, zoom)
+    key = f"cache:map:{zoom}:{south:.6f}:{west:.6f}:{north:.6f}:{east:.6f}"
+    cached = await cache_get(key)
+    if cached is not None:
+        return cached
+
+    now = datetime.now(timezone.utc)
+    cursor = get_db().queues.find(
+        {
+            "location": {"$geoWithin": {"$box": [[west, south], [east, north]]}},
+            "expires_at": {"$gt": now},
+        },
+        {"title": 1, "location": 1, "weight": 1, "weight_updated_at": 1},
+    )
+    points = []
+    async for doc in cursor:
+        weight = _current_weight(doc, now)
+        lng, lat = doc["location"]["coordinates"]
+        points.append(
+            {
+                "id": str(doc["_id"]),
+                "title": doc["title"],
+                "lat": lat,
+                "lng": lng,
+                "weight": weight,
+                "intensity": weight / settings.weight_max,
+            }
+        )
+    await cache_set(key, points, settings.cache_ttl_map)
+    return points
 
 
 @router.post(
