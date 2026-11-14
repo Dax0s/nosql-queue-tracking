@@ -1,11 +1,16 @@
 """Eilės ir žemėlapis. Atsakingas: žmogus A."""
 
+from datetime import datetime, timedelta, timezone
 from typing import Annotated
 
+from bson import ObjectId
 from fastapi import APIRouter, HTTPException, Query, status
 
 from app.auth.deps import OptionalUser, UserOnly
+from app.config import settings
+from app.db.mongo import get_db
 from app.models.schemas import MapPoint, QueueCreateIn, QueueOut
+from app.services.events import track_event
 
 router = APIRouter(prefix="/queues", tags=["Eilės ir žemėlapis"])
 
@@ -26,10 +31,64 @@ async def get_map(
     raise _TODO
 
 
-@router.post("", response_model=QueueOut, status_code=201, summary="Nauja eilė")
+@router.post(
+    "",
+    response_model=QueueOut,
+    status_code=status.HTTP_201_CREATED,
+    summary="Create a queue",
+    responses={
+        401: {"description": "Not authenticated"},
+        403: {"description": "Insufficient permissions"},
+    },
+)
 async def create_queue(body: QueueCreateIn, user: UserOnly):
-    # TODO(A): insert, add_weight(..., "create"), track_event("queue_created")
-    raise _TODO
+    db = get_db()
+    now = datetime.now(timezone.utc)
+    weight = float(settings.weight_points["create"])
+    expires_at = now + timedelta(minutes=weight / settings.weight_decay_per_min)
+    result = await db.queues.insert_one(
+        {
+            "title": body.title,
+            "location": {"type": "Point", "coordinates": [body.lng, body.lat]},
+            "created_by": ObjectId(user.user_id),
+            "created_at": now,
+            "weight": weight,
+            "weight_updated_at": now,
+            "expires_at": expires_at,
+            "rating_sum": 0,
+            "rating_count": 0,
+            "comment_count": 0,
+        }
+    )
+    queue_id = str(result.inserted_id)
+
+    creator = await db.users.find_one({"_id": ObjectId(user.user_id)}, {"birth_year": 1})
+    age = max(0, min(255, now.year - creator["birth_year"])) if creator else 0
+    await track_event(
+        "queue_created",
+        user_id=user.user_id,
+        user_age=age,
+        queue_id=queue_id,
+        lat=body.lat,
+        lng=body.lng,
+    )
+
+    return QueueOut(
+        id=queue_id,
+        title=body.title,
+        lat=body.lat,
+        lng=body.lng,
+        weight=weight,
+        expires_at=expires_at,
+        rating_avg=None,
+        rating_count=0,
+        comment_count=0,
+        active_count=0,
+        avg_wait_sec=None,
+        wait_samples=0,
+        is_checked_in=False,
+        my_score=None,
+    )
 
 
 @router.get("/{queue_id}", response_model=QueueOut, summary="Eilės suvestinė (cache 30 s)")
