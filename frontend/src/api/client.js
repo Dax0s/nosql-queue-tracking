@@ -5,9 +5,22 @@ export const getToken = () => localStorage.getItem(TOKEN_KEY)
 export const setToken = (token) =>
   token ? localStorage.setItem(TOKEN_KEY, token) : localStorage.removeItem(TOKEN_KEY)
 
+function formatDetail(detail) {
+  if (typeof detail === 'string') return detail
+  if (Array.isArray(detail)) {
+    return detail
+      .map((item) => {
+        const field = item.loc?.[item.loc.length - 1]
+        return field && field !== 'body' ? `${field}: ${item.msg}` : item.msg
+      })
+      .join('; ')
+  }
+  return JSON.stringify(detail)
+}
+
 export class ApiError extends Error {
   constructor(status, detail) {
-    super(typeof detail === 'string' ? detail : JSON.stringify(detail))
+    super(formatDetail(detail))
     this.status = status
     this.detail = detail
   }

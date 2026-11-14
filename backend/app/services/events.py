@@ -1,4 +1,4 @@
-"""Įvykių siuntimas į ClickHouse (spec. 9 skyrius). Atsakingas: žmogus B."""
+"""Sending events to ClickHouse (spec section 9). Owner: person B."""
 
 from typing import Literal
 
@@ -16,12 +16,12 @@ EventType = Literal[
 
 
 async def track_event(event_type: EventType, **fields) -> None:
-    """Įrašo įvykį į `queues.events`. Niekada nemeta klaidos kvietėjui.
+    """Writes an event to `queues.events`. Never raises to the caller.
 
-    Galimi `fields`: user_id, user_age, queue_id, lat, lng, score, duration_sec
-    (trūkstami užpildomi numatytosiomis reikšmėmis; event_time = dabar).
+    Allowed `fields`: user_id, user_age, queue_id, lat, lng, score, duration_sec
+    (missing ones are filled with defaults; event_time = now).
 
-    TODO(B): insert su `settings={"async_insert": 1, "wait_for_async_insert": 0}`,
-    klaidas tik log'inti.
+    TODO(B): insert with `settings={"async_insert": 1, "wait_for_async_insert": 0}`,
+    only log errors.
     """
-    raise NotImplementedError
+    return None

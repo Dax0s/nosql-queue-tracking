@@ -1,4 +1,4 @@
-"""FastAPI priklausomybės: dabartinis vartotojas ir rolių tikrinimas."""
+"""FastAPI dependencies: current user and role checks."""
 
 from typing import Annotated
 
@@ -20,7 +20,7 @@ class SessionUser(BaseModel):
 async def get_optional_user(
     creds: Annotated[HTTPAuthorizationCredentials | None, Depends(_bearer)],
 ) -> SessionUser | None:
-    """Svečiui grąžina None (viešiems endpoint'ams su vartotojo būsena)."""
+    """Returns None for guests (for public endpoints that include user state)."""
     if creds is None:
         return None
     session = await get_session(creds.credentials)
@@ -33,14 +33,18 @@ async def get_current_user(
     user: Annotated[SessionUser | None, Depends(get_optional_user)],
 ) -> SessionUser:
     if user is None:
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Neprisijungta")
+        raise HTTPException(
+            status.HTTP_401_UNAUTHORIZED,
+            "Not authenticated",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
     return user
 
 
 def require_role(*roles: str):
     async def checker(user: Annotated[SessionUser, Depends(get_current_user)]) -> SessionUser:
         if user.role not in roles:
-            raise HTTPException(status.HTTP_403_FORBIDDEN, "Nepakanka teisių")
+            raise HTTPException(status.HTTP_403_FORBIDDEN, "Insufficient permissions")
         return user
 
     return checker
