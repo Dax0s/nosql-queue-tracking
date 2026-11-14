@@ -32,6 +32,7 @@ class Settings(BaseSettings):
     cache_ttl_badges: int = 3600
     cache_ttl_report: int = 600
 
+    comments_page_size: int = 20
     comment_rate_limit: int = 5
     comment_rate_window_sec: int = 60
 
