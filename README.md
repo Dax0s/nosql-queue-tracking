@@ -1,4 +1,4 @@
-# Eilių sekimo sistema
+# Low IQueue
 
 Žemėlapis, kuriame matyti, kur šiuo metu yra eilės: check-in / check-out, komentarai, įvertinimai ir analitika.
 

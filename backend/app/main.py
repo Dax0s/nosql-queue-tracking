@@ -21,7 +21,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="Eilių sekimo sistema",
+    title="Low IQueue",
     description="Eilės žemėlapyje: check-in, komentarai, įvertinimai ir analitika.",
     version="0.1.0",
     lifespan=lifespan,

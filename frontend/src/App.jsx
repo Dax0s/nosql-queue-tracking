@@ -20,7 +20,7 @@ export default function App() {
   return (
     <div className="layout">
       <nav className="navbar">
-        <Link to="/" className="brand">Eilės</Link>
+        <Link to="/" className="brand">Low IQueue</Link>
         {user?.role === 'user' && <Link to="/my-queues">Mano eilės</Link>}
         {user?.role === 'admin' && <Link to="/reports">Ataskaitos</Link>}
         {user ? (
