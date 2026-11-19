@@ -17,9 +17,6 @@ from app.services.cache import cache_delete, cache_get, cache_set, invalidate_qu
 
 router = APIRouter(tags=["Komentarai"])
 
-_TODO = HTTPException(status.HTTP_501_NOT_IMPLEMENTED, "Dar neįgyvendinta")
-
-
 @router.get(
     "/queues/{queue_id}/comments",
     response_model=CommentsPage,
@@ -121,10 +118,16 @@ async def create_comment(queue_id: str, body: CommentCreateIn, user: UserOnly):
     if queue is None:
         raise HTTPException(404, "Eilė nerasta")
 
+    author = await db.users.find_one(
+        {"_id": ObjectId(user.user_id)}, {"first_name": 1, "last_name": 1, "total_likes": 1}
+    )
+    if author is None:
+        raise HTTPException(401, "Vartotojas nerastas")
+
     key = f"rl:comment:{user.user_id}"
     count = await r.incr(key)
     if count == 1:
-        await r.expire(key, settings.comment_rate_window_sec)
+        await r.expire(key, settings.comment_rate_window_sec) ##TODO: jei numirs servas, kai count=1 o sita salyga ner patrigerinta bus riesta.
     if count > settings.comment_rate_limit:
         raise HTTPException(429, "Per daug komentarų, palauk minutę")
     #add comment
@@ -139,12 +142,10 @@ async def create_comment(queue_id: str, body: CommentCreateIn, user: UserOnly):
 
     #TODO turi padideti svoris
 
-    author = await db.users.find_one({"_id": ObjectId(user.user_id)})
-    
     return CommentOut(
         id=str(result.inserted_id), queue_id=queue_id, user_id=user.user_id,
         author_name=f"{author['first_name']} {author['last_name'][0]}.",
-        badge=None,  # TODO: look up from badges by author["total_likes"]
+        badge=badge_for(author.get("total_likes", 0), await get_badges()), 
         text=body.text, likes_count=0, created_at=now,
     )
 
