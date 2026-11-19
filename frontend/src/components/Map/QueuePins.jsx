@@ -21,7 +21,7 @@ const pinIcon = L.icon({
 
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value))
 
-export default function QueuePins({ extraQueues = [] }) {
+export default function QueuePins({ extraQueues = [], onSelect }) {
   const map = useMap()
   const [points, setPoints] = useState([])
   const requestId = useRef(0)
@@ -64,7 +64,12 @@ export default function QueuePins({ extraQueues = [] }) {
   const visible = [...points, ...extraQueues.filter((queue) => !known.has(queue.id))]
 
   return visible.map((queue) => (
-    <Marker key={queue.id} position={[queue.lat, queue.lng]} icon={pinIcon}>
+    <Marker
+      key={queue.id}
+      position={[queue.lat, queue.lng]}
+      icon={pinIcon}
+      eventHandlers={{ click: () => onSelect?.(queue.id) }}
+    >
       <Popup>
         <div className="queue-popup">
           <h3>{queue.title}</h3>
