@@ -33,6 +33,21 @@ body { font-family: system-ui, sans-serif; color: #1f2933; }
 .link-btn { padding: 0; border: none; background: none; color: #6b7785; font: inherit; font-size: 13px; cursor: pointer; }
 .link-btn:hover { color: #c0392b; text-decoration: underline; }
 
+.rating { margin-top: 16px; display: flex; flex-direction: column; gap: 8px; }
+.rating-summary { display: flex; align-items: center; gap: 6px; }
+.rating-mine { margin: 0; display: flex; align-items: center; gap: 6px; }
+.rating-form { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.rating-form > button { padding: 6px 14px; font: inherit; cursor: pointer; }
+.rating-form > button:disabled { cursor: default; opacity: 0.6; }
+.stars { display: inline-flex; line-height: 1; }
+.stars .star { color: #d9dee3; }
+.stars .star.on { color: #f5a623; }
+.stars-sm { font-size: 14px; }
+.stars-md { font-size: 18px; }
+.stars-lg { font-size: 28px; }
+.stars-lg button { padding: 0 2px; border: none; background: none; font: inherit; cursor: pointer; }
+.stars-lg button:disabled { cursor: default; }
+
 .comments h3 { margin: 24px 0 12px; font-size: 16px; }
 .comment-form { display: flex; flex-direction: column; gap: 6px; margin-bottom: 16px; }
 .comment-form textarea { padding: 8px 10px; font: inherit; border: 1px solid #d9dee3; border-radius: 4px; resize: vertical; }
