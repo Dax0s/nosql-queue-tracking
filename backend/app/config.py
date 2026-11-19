@@ -14,7 +14,7 @@ class Settings(BaseSettings):
 
     session_ttl_sec: int = 24 * 3600
 
-    # Eilės svoris (spec. 6 skyrius)
+    # Eilės svoris
     weight_decay_per_min: float = 1.0
     weight_max: float = 360.0
     weight_cooldown_sec: int = 900
@@ -25,10 +25,10 @@ class Settings(BaseSettings):
         "comment": 7,
     }
 
-    # Cache TTL sekundėmis (spec. 8 skyrius)
+    # Cache TTL sekundėmis
     cache_ttl_map: int = 30
     cache_ttl_queue: int = 30
-    cache_ttl_comments: int = 30
+    cache_ttl_comments: int = 5
     cache_ttl_badges: int = 3600
     cache_ttl_report: int = 600
 

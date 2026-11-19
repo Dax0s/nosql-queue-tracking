@@ -1,5 +1,3 @@
-"""Eilės ir žemėlapis. Atsakingas: žmogus A."""
-
 import math
 from datetime import datetime, timedelta, timezone
 from typing import Annotated
@@ -13,6 +11,7 @@ from app.db.mongo import get_db
 from app.models.schemas import MapPoint, QueueCreateIn, QueueOut
 from app.services.cache import cache_get, cache_set
 from app.services.events import track_event
+from app.services.weight import current_weight
 
 router = APIRouter(prefix="/queues", tags=["Eilės ir žemėlapis"])
 
@@ -29,11 +28,6 @@ def _snap_bbox(
         min(90.0, math.ceil(max_lat / cell) * cell),
         min(180.0, math.ceil(max_lng / cell) * cell),
     )
-
-
-def _current_weight(doc: dict, now: datetime) -> float:
-    minutes = (now - doc["weight_updated_at"]).total_seconds() / 60
-    return max(0.0, doc["weight"] - settings.weight_decay_per_min * minutes)
 
 
 # Must be declared before /{queue_id}
@@ -69,7 +63,7 @@ async def get_map(
     )
     points = []
     async for doc in cursor:
-        weight = _current_weight(doc, now)
+        weight = current_weight(doc, now)
         lng, lat = doc["location"]["coordinates"]
         points.append(
             {
