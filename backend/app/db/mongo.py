@@ -38,7 +38,4 @@ async def ensure_indexes() -> None:
         [("queue_id", ASCENDING), ("user_id", ASCENDING), ("checked_out_at", ASCENDING)]
     )
     await db.comments.create_index([("queue_id", ASCENDING), ("created_at", DESCENDING)])
-    await db.comment_likes.create_index(
-        [("comment_id", ASCENDING), ("user_id", ASCENDING)], unique=True
-    )
     await db.reviews.create_index([("queue_id", ASCENDING), ("user_id", ASCENDING)], unique=True)
