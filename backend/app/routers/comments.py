@@ -54,7 +54,7 @@ async def _load_comments_page(queue_id: str, page: int) -> dict:
 
     size = settings.comments_page_size
     # Imam vienu daugiau, kad sužinotume, ar yra kitas puslapis.
-    # liked_by neimam: kas palikino, klientui nerodom, ir cache lieka mažas
+    # liked_by nereikalingas sąrašui (gali būti tūkstančiai id), todėl jo netraukiam iš Mongo
     docs = await (
         db.comments.find({"queue_id": qid}, {"liked_by": 0})
         .sort("created_at", -1)
