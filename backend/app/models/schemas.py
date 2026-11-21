@@ -1,6 +1,6 @@
 """Pydantic schemos (API kontraktas, spec. 10 skyrius)."""
 
-from datetime import datetime
+from datetime import date, datetime
 from typing import Literal
 
 from pydantic import BaseModel, EmailStr, Field
@@ -117,3 +117,43 @@ class MyQueueOut(BaseModel):
     checked_out_at: datetime | None
     duration_sec: int | None
     my_score: int | None
+
+
+# --- Ataskaitos ---
+
+
+class ActivityRow(BaseModel):
+    period_start: date
+    new_users: int
+    new_queues: int
+
+
+class CheckinsRow(BaseModel):
+    period_start: date
+    checkins: int
+
+
+class WaitTimeRow(BaseModel):
+    weekday: int = Field(description="1 = pirmadienis, 7 = sekmadienis")
+    hour: int
+    avg_wait_min: float
+    samples: int
+
+
+class PopularQueueRow(BaseModel):
+    queue_id: str
+    title: str
+    views: int
+    checkins: int
+
+
+class CheckoutRateOut(BaseModel):
+    checkins: int
+    checkouts: int
+    rate: float | None = Field(description="checkouts / checkins; null, jei check-in nebuvo")
+
+
+class AgeGroupRow(BaseModel):
+    age_group: str
+    events: int
+    users: int

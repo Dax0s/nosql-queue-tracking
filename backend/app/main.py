@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
 from app.db import clickhouse, mongo, redis
 from app.routers import auth, checkins, comments, me, queues, reports, reviews
+from app.services import events
 
 
 @asynccontextmanager
@@ -15,6 +16,7 @@ async def lifespan(app: FastAPI):
     await clickhouse.connect()
     await mongo.ensure_indexes()
     yield
+    await events.flush()
     await clickhouse.close()
     await redis.close()
     mongo.close()
