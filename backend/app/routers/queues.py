@@ -1,5 +1,3 @@
-"""Eilės ir žemėlapis. Atsakingas: žmogus A."""
-
 import math
 from datetime import datetime, timedelta, timezone
 from typing import Annotated
@@ -13,6 +11,7 @@ from app.db.mongo import get_db
 from app.models.schemas import MapPoint, QueueCreateIn, QueueOut
 from app.services.cache import cache_get, cache_set
 from app.services.events import track_event
+from app.services.weight import current_weight
 
 router = APIRouter(prefix="/queues", tags=["Eilės ir žemėlapis"])
 
@@ -31,9 +30,28 @@ def _snap_bbox(
     )
 
 
-def _current_weight(doc: dict, now: datetime) -> float:
-    minutes = (now - doc["weight_updated_at"]).total_seconds() / 60
-    return max(0.0, doc["weight"] - settings.weight_decay_per_min * minutes)
+# GeoJSON polygonas turi būti mažesnis už pusrutulį, todėl labai atitolinus (zoom ~0–2)
+# geo filtro nenaudojame: tada užtenka expires_at, o bbox tikrinamas Python'e.
+_MAX_POLYGON_SPAN = 90.0
+_POLE_LAT = 89.0  # kraštinė ties ašigaliu būtų išsigimusi
+
+
+def _bbox_polygon(south: float, west: float, north: float, east: float) -> dict:
+    """bbox kaip GeoJSON Polygon, kad būtų naudojamas 2dsphere indeksas
+    (`$box` jo nenaudoja – COLLSCAN).
+
+    2dsphere kraštines laiko didžiųjų apskritimų lankais, todėl horizontalios kraštinės
+    išlinktų link ašigalio. Kas 1° pridedame tarpinių taškų, kad jos atitiktų platumą.
+    """
+    south, north = max(south, -_POLE_LAT), min(north, _POLE_LAT)
+    steps = max(1, math.ceil(east - west))
+    lngs = [west + (east - west) * i / steps for i in range(steps + 1)]
+    ring = (
+        [[lng, south] for lng in lngs]
+        + [[lng, north] for lng in reversed(lngs)]
+        + [[west, south]]
+    )
+    return {"type": "Polygon", "coordinates": [ring]}
 
 
 # Must be declared before /{queue_id}
@@ -60,17 +78,18 @@ async def get_map(
         return cached
 
     now = datetime.now(timezone.utc)
+    query: dict = {"expires_at": {"$gt": now}}
+    if east - west <= _MAX_POLYGON_SPAN:
+        query["location"] = {"$geoWithin": {"$geometry": _bbox_polygon(south, west, north, east)}}
     cursor = get_db().queues.find(
-        {
-            "location": {"$geoWithin": {"$box": [[west, south], [east, north]]}},
-            "expires_at": {"$gt": now},
-        },
-        {"title": 1, "location": 1, "weight": 1, "weight_updated_at": 1},
+        query, {"title": 1, "location": 1, "weight": 1, "weight_updated_at": 1}
     )
     points = []
     async for doc in cursor:
-        weight = _current_weight(doc, now)
         lng, lat = doc["location"]["coordinates"]
+        if not (south <= lat <= north and west <= lng <= east):
+            continue
+        weight = current_weight(doc, now)
         points.append(
             {
                 "id": str(doc["_id"]),
