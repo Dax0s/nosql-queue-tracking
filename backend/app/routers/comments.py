@@ -6,7 +6,6 @@ from typing import Annotated
 from bson import ObjectId
 from fastapi import APIRouter, HTTPException, Query, status
 from pymongo import ReturnDocument
-from pymongo.errors import DuplicateKeyError
 
 from app.auth.deps import OptionalUser, UserOnly
 from app.db.mongo import get_db
@@ -16,9 +15,6 @@ from app.config import settings
 from app.services.cache import cache_delete, cache_get, cache_set, invalidate_queue
 
 router = APIRouter(tags=["Komentarai"])
-
-_TODO = HTTPException(status.HTTP_501_NOT_IMPLEMENTED, "Dar neįgyvendinta")
-
 
 @router.get(
     "/queues/{queue_id}/comments",
@@ -38,9 +34,10 @@ async def list_comments(queue_id: str, user: OptionalUser, page: Annotated[int, 
 
     result = CommentsPage(**data)
     if user is not None and result.items:
-        liked = await get_db().comment_likes.distinct("comment_id", {
-            "user_id": ObjectId(user.user_id),
-            "comment_id": {"$in": [ObjectId(c.id) for c in result.items]},
+        # liked_by į cache nepatenka, todėl vartotojo likus tikrinam atskira užklausa
+        liked = await get_db().comments.distinct("_id", {
+            "_id": {"$in": [ObjectId(c.id) for c in result.items]},
+            "liked_by": ObjectId(user.user_id),
         })
         liked_ids = {str(i) for i in liked}
         for c in result.items:
@@ -56,9 +53,10 @@ async def _load_comments_page(queue_id: str, page: int) -> dict:
         raise HTTPException(404, "Eilė nerasta")
 
     size = settings.comments_page_size
-    # Imam vienu daugiau, kad sužinotume, ar yra kitas puslapis
+    # Imam vienu daugiau, kad sužinotume, ar yra kitas puslapis.
+    # liked_by nereikalingas sąrašui (gali būti tūkstančiai id), todėl jo netraukiam iš Mongo
     docs = await (
-        db.comments.find({"queue_id": qid})
+        db.comments.find({"queue_id": qid}, {"liked_by": 0})
         .sort("created_at", -1)
         .skip((page - 1) * size)
         .limit(size + 1)
@@ -121,16 +119,22 @@ async def create_comment(queue_id: str, body: CommentCreateIn, user: UserOnly):
     if queue is None:
         raise HTTPException(404, "Eilė nerasta")
 
+    author = await db.users.find_one(
+        {"_id": ObjectId(user.user_id)}, {"first_name": 1, "last_name": 1, "total_likes": 1}
+    )
+    if author is None:
+        raise HTTPException(401, "Vartotojas nerastas")
+
     key = f"rl:comment:{user.user_id}"
     count = await r.incr(key)
     if count == 1:
-        await r.expire(key, settings.comment_rate_window_sec)
+        await r.expire(key, settings.comment_rate_window_sec) ##TODO: jei numirs servas, kai count=1 o sita salyga ner patrigerinta bus riesta.
     if count > settings.comment_rate_limit:
         raise HTTPException(429, "Per daug komentarų, palauk minutę")
     #add comment
     now = datetime.now(timezone.utc)
     doc = {"queue_id": queue["_id"], "user_id": ObjectId(user.user_id),
-           "text": body.text, "likes_count": 0, "created_at": now}
+           "text": body.text, "likes_count": 0, "liked_by": [], "created_at": now}
     result = await db.comments.insert_one(doc)
 
     # queue counters 
@@ -139,19 +143,17 @@ async def create_comment(queue_id: str, body: CommentCreateIn, user: UserOnly):
 
     #TODO turi padideti svoris
 
-    author = await db.users.find_one({"_id": ObjectId(user.user_id)})
-    
     return CommentOut(
         id=str(result.inserted_id), queue_id=queue_id, user_id=user.user_id,
         author_name=f"{author['first_name']} {author['last_name'][0]}.",
-        badge=None,  # TODO: look up from badges by author["total_likes"]
+        badge=badge_for(author.get("total_likes", 0), await get_badges()), 
         text=body.text, likes_count=0, created_at=now,
     )
 
 
 @router.delete("/comments/{comment_id}", status_code=204, summary="Ištrinti savo komentarą")
 async def delete_comment(comment_id: str, user: UserOnly):
-    # Tik autorius (403); trina likus, comment_count--, total_likes -= likes_count
+    # Tik autorius (403); likai ištrinami kartu su dokumentu, comment_count--, total_likes -= likes_count
     if not ObjectId.is_valid(comment_id):
         raise HTTPException(404, "Komentaras nerastas")
     
@@ -166,7 +168,6 @@ async def delete_comment(comment_id: str, user: UserOnly):
             raise HTTPException(404, "Komentaras nerastas")
         raise HTTPException(403, "Negali trinti kito komentaro")
 
-    await db.comment_likes.delete_many({"comment_id": oid}) #TODO: tame paciame dokumente padarysim galbut?
     await db.queues.update_one({"_id": doc["queue_id"]}, {"$inc": {"comment_count": -1}})
     if doc.get("likes_count", 0):
         await db.users.update_one(
@@ -179,7 +180,7 @@ async def delete_comment(comment_id: str, user: UserOnly):
 
 @router.post("/comments/{comment_id}/like", status_code=201, summary="Palikinti komentarą")
 async def like_comment(comment_id: str, user: UserOnly):
-    # Savo komentaro negalima (400), antras likas -> 409 (unikalus indeksas),
+    # Savo komentaro negalima (400), antras likas -> 409,
     # likes_count++, autoriaus total_likes++
     if not ObjectId.is_valid(comment_id):
         raise HTTPException(404, "Komentaras nerastas")
@@ -188,33 +189,25 @@ async def like_comment(comment_id: str, user: UserOnly):
     oid = ObjectId(comment_id)
     liker_id = ObjectId(user.user_id)
 
-    comment = await db.comments.find_one({"_id": oid}, {"user_id": 1, "queue_id": 1})
-    if comment is None:
-        raise HTTPException(404, "Komentaras nerastas")
-    if comment["user_id"] == liker_id:
-        raise HTTPException(400, "Negalima likinti savo komentaro")
-
-    # Unikalus indeksas (comment_id, user_id) garantuoja vieną liką, net jei paspausta du kartus
-    try:
-        like = await db.comment_likes.insert_one({
-            "comment_id": oid, "user_id": liker_id,
-            "comment_author_id": comment["user_id"],
-            "created_at": datetime.now(timezone.utc),
-        })
-    except DuplicateKeyError:
-        raise HTTPException(409, "Jau palikinta")
-
+    # Vienas atominis update viename dokumente: filtras užtikrina vieną liką
+    # ir ne savo komentarą, net jei paspausta du kartus
     updated = await db.comments.find_one_and_update(
-        {"_id": oid}, {"$inc": {"likes_count": 1}},
-        projection={"likes_count": 1}, return_document=ReturnDocument.AFTER,
+        {"_id": oid, "user_id": {"$ne": liker_id}, "liked_by": {"$ne": liker_id}},
+        {"$push": {"liked_by": liker_id}, "$inc": {"likes_count": 1}},
+        projection={"user_id": 1, "queue_id": 1, "likes_count": 1},
+        return_document=ReturnDocument.AFTER,
     )
     if updated is None:
-        # Komentaras ištrintas tarp patikrinimo ir liko: atšaukiam liką
-        await db.comment_likes.delete_one({"_id": like.inserted_id})
-        raise HTTPException(404, "Komentaras nerastas")
+        # Nepavyko: išsiaiškinam kodėl (tik klaidos atveju)
+        comment = await db.comments.find_one({"_id": oid}, {"user_id": 1})
+        if comment is None:
+            raise HTTPException(404, "Komentaras nerastas")
+        if comment["user_id"] == liker_id:
+            raise HTTPException(400, "Negalima likinti savo komentaro")
+        raise HTTPException(409, "Jau palikinta")
 
-    await db.users.update_one({"_id": comment["user_id"]}, {"$inc": {"total_likes": 1}})
-    await cache_delete(f"cache:queue:{comment['queue_id']}:comments:1")
+    await db.users.update_one({"_id": updated["user_id"]}, {"$inc": {"total_likes": 1}})
+    await cache_delete(f"cache:queue:{updated['queue_id']}:comments:1")
     # TODO(B): track_event("comment_liked", user_id=..., queue_id=...), kai bus įgyvendintas
     return {"likes_count": updated["likes_count"]}
 
@@ -227,16 +220,16 @@ async def unlike_comment(comment_id: str, user: UserOnly):
 
     db = get_db()
     oid = ObjectId(comment_id)
+    liker_id = ObjectId(user.user_id)
 
     # Atomiškai: dvigubas paspaudimas negali atšaukti to paties liko du kartus
-    like = await db.comment_likes.find_one_and_delete({"comment_id": oid, "user_id": ObjectId(user.user_id)})
-    if like is None:
+    comment = await db.comments.find_one_and_update(
+        {"_id": oid, "liked_by": liker_id},
+        {"$pull": {"liked_by": liker_id}, "$inc": {"likes_count": -1}},
+        projection={"user_id": 1, "queue_id": 1},
+    )
+    if comment is None:
         raise HTTPException(404, "Likas nerastas")
 
-    comment = await db.comments.find_one_and_update(
-        {"_id": oid}, {"$inc": {"likes_count": -1}}, projection={"queue_id": 1},
-    )
-    # Jei komentaras ką tik ištrintas, delete_comment jau atėmė šį liką iš total_likes
-    if comment is not None:
-        await db.users.update_one({"_id": like["comment_author_id"]}, {"$inc": {"total_likes": -1}})
-        await cache_delete(f"cache:queue:{comment['queue_id']}:comments:1")
+    await db.users.update_one({"_id": comment["user_id"]}, {"$inc": {"total_likes": -1}})
+    await cache_delete(f"cache:queue:{comment['queue_id']}:comments:1")
