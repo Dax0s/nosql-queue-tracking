@@ -94,13 +94,13 @@ Taikomas **tiesinis blėsimas**: svoris pasiekia tikslų nulį, todėl lengva nu
 
 | Veiksmas | Taškai |
 |---|---|
-| Eilės sukūrimas | +10 |
+| Eilės sukūrimas | +60 |
 | Check-in | +5 |
-| Įvertinimas | +3 |
-| Komentaras | +2 |
+| Įvertinimas | +10 |
+| Komentaras | +7 |
 
-- Blėsimas: **k = 4 taškai per valandą**.
-- Maksimalus svoris: **100**.
+- Blėsimas: **k = 1 taškas per minutę**.
+- Maksimalus svoris: **360**.
 
 **Dabartinis svoris skaičiuojamas skaitymo metu:**
 
@@ -111,16 +111,16 @@ svoris_dabar = max(0, weight − k · (dabar − weight_updated_at))
 **Kiekvieno veiksmo metu** eilės laukai atnaujinami vienu atominiu MongoDB `update` su aggregation pipeline, todėl užraktas nereikalingas:
 
 ```
-weight            = min(100, svoris_dabar + taškai)
+weight            = min(360, svoris_dabar + taškai)
 weight_updated_at = dabar
 expires_at        = dabar + weight / k
 ```
 
 Laukas `expires_at` nurodo, kada svoris pasieks 0. Tad žemėlapio užklausa paprasta: `expires_at > dabar`.
 
-**Apsauga nuo „pumpavimo“.** Tas pats vartotojas tos pačios rūšies veiksmu tai pačiai eilei svorio prideda ne dažniau nei kartą per valandą. Tai tikrinama Redis raktu `weight:{queue_id}:{user_id}:{action}` (`SET NX EX 3600`).
+**Apsauga nuo „pumpavimo“.** Tas pats vartotojas tos pačios rūšies veiksmu tai pačiai eilei svorio prideda ne dažniau nei kartą per 15 minučių. Tai tikrinama Redis raktu `weight:{queue_id}:{user_id}:{action}` (`SET NX EX 900`).
 
-**Heatmapo intensyvumas** = `svoris_dabar / 100`.
+**Heatmapo intensyvumas** = `svoris_dabar / 360`.
 
 ---
 
@@ -234,7 +234,7 @@ Laukas `expires_at` nurodo, kada svoris pasieks 0. Tad žemėlapio užklausa pap
 | `session:{token}` | Hash (`user_id`, `role`) | 24 h (pratęsiama) | Sesija |
 | `queue:{id}:active` | Set (`user_id`) | iki eilės `expires_at` | Kas dabar stovi eilėje |
 | `lock:checkin:{user_id}:{queue_id}` | String (`SET NX PX 3000`) | 3 s | Apsauga nuo dvigubo check-in paspaudimo |
-| `weight:{queue_id}:{user_id}:{action}` | String | 1 h | Svorio pumpavimo apsauga |
+| `weight:{queue_id}:{user_id}:{action}` | String | 15 min | Svorio pumpavimo apsauga |
 | `rl:comment:{user_id}` | Counter | 1 min | Ne daugiau 5 komentarų per minutę |
 | `cache:map:{zoom}:{bbox_hash}` | String (JSON) | 30 s | Žemėlapio taškai ir svoriai |
 | `cache:queue:{id}` | String (JSON) | 30 s | Eilės suvestinė (įvertinimas, žmonių skaičius, vid. laukimas) |
@@ -436,6 +436,17 @@ Darbas dalijamas **pagal funkcijas**: kiekvienas savo dalį daro nuo duomenų ba
 - Visos ataskaitos ir jų cache.
 - `seed.py`.
 - Frontend: komentarų ir įvertinimų komponentai eilės lange, ataskaitų puslapis.
+
+Domas:
+- Sesijos, login, registracija, eiliu sukurimas
+- Svorio logika, queues map su geouzklaus, track_event ir clickhouse lentele, visos ataskaitos
+- comment_created, review_created and comment_liked. The person doing check-in and the queue detail endpoint needs to send  
+    checkin, checkout (with duration_sec) and queue_view.
+- seed.py
+
+Danielius:
+- Komentarai, komentaru cache, likes, ivertinimai, badges rodymas prie komentaru, badges cache
+- UI sitiems, UI eilei, likes ideti i komentaru dokumenta kaip masyva, paupdatint plana
 
 ### Priklausomybės
 - Kol A nebaigė eilių kūrimo, B naudoja kelias eiles, įrašytas tiesiai į MongoDB arba per ankstyvą `seed.py` versiją.
