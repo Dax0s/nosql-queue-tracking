@@ -1,4 +1,3 @@
-// Ataskaitų puslapis (tik admin, spec. 9 ir 11 skyriai). Atsakingas: B.
 import { useEffect, useState } from 'react'
 import {
   Bar,
