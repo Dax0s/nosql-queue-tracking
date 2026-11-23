@@ -33,7 +33,7 @@ export const reports = {
   activity: (params) => api.get('/reports/activity', params),
   checkins: (params) => api.get('/reports/checkins', params),
   waitTimes: (queueId) => api.get('/reports/wait-times', { queue_id: queueId }),
-  popularQueues: (days = 7) => api.get('/reports/popular-queues', { days }),
+  popularQueues: (params) => api.get('/reports/popular-queues', params),
   checkoutRate: (params) => api.get('/reports/checkout-rate', params),
   activityByAge: () => api.get('/reports/activity-by-age'),
 }
