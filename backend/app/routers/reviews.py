@@ -11,6 +11,7 @@ from app.auth.deps import UserOnly
 from app.db.mongo import get_db
 from app.models.schemas import ReviewIn
 from app.services.cache import invalidate_queue
+from app.services.events import track_event
 
 router = APIRouter(prefix="/queues", tags=["Įvertinimai"])
 
@@ -44,7 +45,7 @@ async def create_review(queue_id: str, body: ReviewIn, user: UserOnly):
     )
     await invalidate_queue(queue_id) #TODO: istriname ir komentarus ar reik? Gal nelabai ir rupi?
     # TODO(A): add_weight(queue_id, user.user_id, "review"), kai bus įgyvendintas
-    # TODO(B): track_event("review_created", user_id=..., queue_id=..., score=...), kai bus įgyvendintas
+    await track_event("review_created", user_id=user.user_id, queue_id=queue_id, score=body.score)
 
     return {
         "score": body.score,

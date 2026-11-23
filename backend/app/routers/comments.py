@@ -13,6 +13,7 @@ from app.db.redis import get_redis
 from app.models.schemas import BadgeOut, CommentCreateIn, CommentOut, CommentsPage
 from app.config import settings
 from app.services.cache import cache_delete, cache_get, cache_set, invalidate_queue
+from app.services.events import track_event
 
 router = APIRouter(tags=["Komentarai"])
 
@@ -110,8 +111,7 @@ def badge_for(total_likes: int, badges: list[dict]) -> BadgeOut | None:
     summary="Naujas komentaras (max 5 per minutę)",
 )
 async def create_comment(queue_id: str, body: CommentCreateIn, user: UserOnly):
-    # TODO(B): rl:comment:{user_id} (429), insert, comment_count++, add_weight(..., "comment"),
-    # invalidate_queue, track_event("comment_created")
+    # TODO(B): add_weight(..., "comment")
     db, r = get_db(), get_redis()
     if not ObjectId.is_valid(queue_id):
         raise HTTPException(404, "Eilė nerasta")
@@ -140,6 +140,7 @@ async def create_comment(queue_id: str, body: CommentCreateIn, user: UserOnly):
     # queue counters 
     await db.queues.update_one({"_id": queue["_id"]}, {"$inc": {"comment_count": 1}})
     await invalidate_queue(queue_id)
+    await track_event("comment_created", user_id=user.user_id, queue_id=queue_id)
 
     #TODO turi padideti svoris
 
@@ -208,7 +209,7 @@ async def like_comment(comment_id: str, user: UserOnly):
 
     await db.users.update_one({"_id": updated["user_id"]}, {"$inc": {"total_likes": 1}})
     await cache_delete(f"cache:queue:{updated['queue_id']}:comments:1")
-    # TODO(B): track_event("comment_liked", user_id=..., queue_id=...), kai bus įgyvendintas
+    await track_event("comment_liked", user_id=user.user_id, queue_id=str(updated["queue_id"]))
     return {"likes_count": updated["likes_count"]}
 
 
