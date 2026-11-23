@@ -12,6 +12,7 @@ from app.db.mongo import get_db
 from app.models.schemas import ReviewIn
 from app.services.cache import invalidate_queue
 from app.services.events import track_event
+from app.services.weight import add_weight
 
 router = APIRouter(prefix="/queues", tags=["Įvertinimai"])
 
@@ -43,8 +44,8 @@ async def create_review(queue_id: str, body: ReviewIn, user: UserOnly):
         {"_id": qid}, {"$inc": {"rating_sum": body.score, "rating_count": 1}},
         projection={"rating_sum": 1, "rating_count": 1}, return_document=ReturnDocument.AFTER,
     )
+    await add_weight(queue_id, user.user_id, "review")
     await invalidate_queue(queue_id) #TODO: istriname ir komentarus ar reik? Gal nelabai ir rupi?
-    # TODO(A): add_weight(queue_id, user.user_id, "review"), kai bus įgyvendintas
     await track_event("review_created", user_id=user.user_id, queue_id=queue_id, score=body.score)
 
     return {

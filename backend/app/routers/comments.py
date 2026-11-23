@@ -14,6 +14,7 @@ from app.models.schemas import BadgeOut, CommentCreateIn, CommentOut, CommentsPa
 from app.config import settings
 from app.services.cache import cache_delete, cache_get, cache_set, invalidate_queue
 from app.services.events import track_event
+from app.services.weight import add_weight
 
 router = APIRouter(tags=["Komentarai"])
 
@@ -111,7 +112,6 @@ def badge_for(total_likes: int, badges: list[dict]) -> BadgeOut | None:
     summary="Naujas komentaras (max 5 per minutę)",
 )
 async def create_comment(queue_id: str, body: CommentCreateIn, user: UserOnly):
-    # TODO(B): add_weight(..., "comment")
     db, r = get_db(), get_redis()
     if not ObjectId.is_valid(queue_id):
         raise HTTPException(404, "Eilė nerasta")
@@ -139,10 +139,10 @@ async def create_comment(queue_id: str, body: CommentCreateIn, user: UserOnly):
 
     # queue counters 
     await db.queues.update_one({"_id": queue["_id"]}, {"$inc": {"comment_count": 1}})
+    await add_weight(queue_id, user.user_id, "comment")
     await invalidate_queue(queue_id)
     await track_event("comment_created", user_id=user.user_id, queue_id=queue_id)
 
-    #TODO turi padideti svoris
 
     return CommentOut(
         id=str(result.inserted_id), queue_id=queue_id, user_id=user.user_id,
