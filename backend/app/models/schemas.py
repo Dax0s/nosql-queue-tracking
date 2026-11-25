@@ -72,6 +72,23 @@ class QueueOut(BaseModel):
     my_score: int | None = None
 
 
+# --- Check-in ---
+
+
+class CheckinOut(BaseModel):
+    queue_id: str
+    checked_in_at: datetime
+    active_count: int
+
+
+class CheckoutOut(BaseModel):
+    queue_id: str
+    checked_in_at: datetime
+    checked_out_at: datetime
+    duration_sec: int
+    active_count: int
+
+
 # --- Komentarai, įvertinimai ---
 
 
