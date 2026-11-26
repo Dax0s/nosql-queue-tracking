@@ -29,7 +29,10 @@ def _active_key(queue_id: str) -> str:
     summary="Pasižymėti eilėje",
     responses={
         404: {"description": "Eilė nerasta"},
-        409: {"description": "Jau pasižymėjęs, eilė nebeaktyvi arba užklausa jau vykdoma"},
+        409: {
+            "description": "Jau pasižymėjęs arba jau stovėjęs šioje eilėje, "
+            "eilė nebeaktyvi arba užklausa jau vykdoma"
+        },
     },
 )
 async def checkin(queue_id: str, user: UserOnly):
@@ -58,6 +61,9 @@ async def _do_checkin(queue_id: str, user_id: str) -> CheckinOut:
     active_key = _active_key(queue_id)
     if await r.sismember(active_key, user_id):
         raise HTTPException(status.HTTP_409_CONFLICT, "Jau esi pasižymėjęs šioje eilėje")
+
+    if await db.checkins.find_one({"queue_id": qid, "user_id": ObjectId(user_id)}, {"_id": 1}):
+        raise HTTPException(status.HTTP_409_CONFLICT, "Šioje eilėje jau stovėjai")
 
     await db.checkins.insert_one(
         {

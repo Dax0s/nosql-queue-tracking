@@ -1,5 +1,5 @@
 // Check-in / check-out mygtukas. Atsakingas: A.
-// Pradines reikšmes (active_count, is_checked_in) paduoda QueuePanel iš queues.get().
+// Pradines reikšmes (active_count, is_checked_in, has_waited, avg_wait_sec, wait_samples) paduoda QueuePanel iš queues.get().
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { queues } from '../../api/index.js'
@@ -14,21 +14,40 @@ function pluralPeople(n) {
   return 'žmonių'
 }
 
+// 1 matavimas, 2–9 matavimai, 10–20 matavimų, 21 matavimas, ...
+function pluralSamples(n) {
+  const mod10 = n % 10
+  const mod100 = n % 100
+  if (mod10 === 1 && mod100 !== 11) return 'matavimas'
+  if (mod10 >= 2 && (mod100 < 10 || mod100 >= 20)) return 'matavimai'
+  return 'matavimų'
+}
+
 function formatDuration(sec) {
   const h = Math.floor(sec / 3600)
   const m = Math.floor((sec % 3600) / 60)
-  const s = sec % 60
+  const s = Math.round(sec % 60)
   if (h > 0) return `${h} val. ${m} min.`
   if (m > 0) return `${m} min. ${s} s`
   return `${s} s`
 }
 
-export default function CheckinButton({ queueId, activeCount = 0, isCheckedIn = false }) {
+export default function CheckinButton({
+  queueId,
+  activeCount = 0,
+  isCheckedIn = false,
+  hasWaited = false,
+  avgWaitSec = null,
+  waitSamples = 0,
+}) {
   const { user } = useAuth()
   const canCheckin = user?.role === 'user'
   const [count, setCount] = useState(activeCount)
   const [checkedIn, setCheckedIn] = useState(Boolean(isCheckedIn))
+  // Vienoje eilėje galima stovėti tik kartą: po check-out mygtukas neberodomas
+  const [waited, setWaited] = useState(Boolean(hasWaited))
   const [lastDuration, setLastDuration] = useState(null)
+  const [wait, setWait] = useState({ avg: avgWaitSec, samples: waitSamples })
   const [sending, setSending] = useState(false)
   const [error, setError] = useState(null)
 
@@ -36,9 +55,14 @@ export default function CheckinButton({ queueId, activeCount = 0, isCheckedIn = 
   useEffect(() => {
     setCount(activeCount)
     setCheckedIn(Boolean(isCheckedIn))
+    setWaited(Boolean(hasWaited))
     setLastDuration(null)
     setError(null)
-  }, [queueId, activeCount, isCheckedIn])
+  }, [queueId, activeCount, isCheckedIn, hasWaited])
+
+  useEffect(() => {
+    setWait({ avg: avgWaitSec, samples: waitSamples })
+  }, [queueId, avgWaitSec, waitSamples])
 
   // Po 409 būsena kliente pasenusi (pvz., kitame skirtuke jau pasižymėta), todėl ją perkraunam
   const resync = async () => {
@@ -46,6 +70,8 @@ export default function CheckinButton({ queueId, activeCount = 0, isCheckedIn = 
       const q = await queues.get(queueId)
       setCount(q.active_count)
       setCheckedIn(Boolean(q.is_checked_in))
+      setWaited(Boolean(q.has_waited))
+      setWait({ avg: q.avg_wait_sec, samples: q.wait_samples })
     } catch {
       // paliekam, kaip yra – klaida jau parodyta
     }
@@ -60,9 +86,15 @@ export default function CheckinButton({ queueId, activeCount = 0, isCheckedIn = 
         setCheckedIn(false)
         setCount(res.active_count)
         setLastDuration(res.duration_sec)
+        // Naujas matavimas įskaičiuojamas iškart, nelaukiant serverio cache (30 s)
+        setWait(({ avg, samples }) => ({
+          avg: ((avg ?? 0) * samples + res.duration_sec) / (samples + 1),
+          samples: samples + 1,
+        }))
       } else {
         const res = await queues.checkin(queueId)
         setCheckedIn(true)
+        setWaited(true)
         setCount(res.active_count)
         setLastDuration(null)
       }
@@ -80,8 +112,21 @@ export default function CheckinButton({ queueId, activeCount = 0, isCheckedIn = 
       <p className="checkin-count">
         Eilėje dabar: <strong>{count}</strong> {pluralPeople(count)}
       </p>
+      <p className="checkin-wait">
+        Vidutinis laukimas:{' '}
+        {wait.samples > 0 && wait.avg != null ? (
+          <>
+            <strong>{formatDuration(wait.avg)}</strong>{' '}
+            <span className="muted">({wait.samples} {pluralSamples(wait.samples)})</span>
+          </>
+        ) : (
+          <span className="muted">dar nėra duomenų</span>
+        )}
+      </p>
 
-      {canCheckin ? (
+      {canCheckin && waited && !checkedIn ? (
+        <p className="muted">Šioje eilėje jau stovėjote</p>
+      ) : canCheckin ? (
         <div className="checkin-form">
           <button
             type="button"

@@ -76,7 +76,7 @@ FastAPI (backend)
   - naujausi komentarai su autoriaus ženkleliu ir likų skaičiumi.
 - **FR6.** Check-in ir check-out:
   - vartotojas gali pasižymėti eilėje (check-in) ir iš jos išeiti (check-out);
-  - vartotojas gali būti pasižymėjęs keliose eilėse vienu metu, bet toje pačioje eilėje tik kartą, kol nepaspaudė check-out;
+  - vartotojas gali būti pasižymėjęs keliose eilėse vienu metu, bet toje pačioje eilėje stovėti galima tik vieną kartą (po check-out iš naujo pasižymėti negalima);
   - jei check-out nepaspaustas, laukimo laikas neskaičiuojamas.
 - **FR7.** Vartotojas gali rašyti komentarus po eile ir ištrinti savo komentarus. Per minutę galima parašyti ne daugiau kaip 5 komentarus.
 - **FR8.** Vartotojas gali įvertinti eilę (1–5) tik vieną kartą. Įvertinimo pakeisti negalima.
@@ -253,7 +253,7 @@ Laukas `expires_at` nurodo, kada svoris pasieks 0. Tad žemėlapio užklausa pap
 **Check-in eiga:**
 1. `SET lock:checkin:{user}:{queue} NX PX 3000`. Jei nepavyko, grąžinama 409.
 2. Tikrinama, ar eilė matoma (`expires_at > dabar`).
-3. Jei `SISMEMBER queue:{id}:active user` grąžina taip, grąžinama 409.
+3. Jei `SISMEMBER queue:{id}:active user` grąžina taip, grąžinama 409. Jei `checkins` jau yra šio vartotojo įrašas šiai eilei (jau stovėjo), irgi 409.
 4. Sukuriamas `checkins` įrašas ir vykdomas `SADD queue:{id}:active user`.
 5. Jei `weight:{queue}:{user}:checkin` nustatomas sėkmingai, pridedamas svoris.
 6. Trinamas `cache:queue:{id}`, siunčiamas `checkin` įvykis, užraktas atlaisvinamas.
