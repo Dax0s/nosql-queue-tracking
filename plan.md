@@ -214,8 +214,8 @@ Laukas `expires_at` nurodo, kada svoris pasieks 0. Tad žemėlapio užklausa pap
 
 ### Indeksai
 - `users.email` (unique)
-- `queues`: `{ location: "2dsphere", expires_at: 1 }`, `created_by`
-- `checkins`: `{ user_id: 1, checked_in_at: -1 }`, `{ queue_id: 1, user_id: 1, checked_out_at: 1 }`
+- `queues`: `{ location: "2dsphere", expires_at: 1 }`
+- `checkins`: `{ queue_id: 1, user_id: 1, checked_out_at: 1 }`
 - `comments`: `{ queue_id: 1, created_at: -1 }`
 - `reviews`: `{ queue_id: 1, user_id: 1 }` (unique)
 
