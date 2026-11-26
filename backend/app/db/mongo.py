@@ -32,7 +32,6 @@ async def ensure_indexes() -> None:
     db = get_db()
     await db.users.create_index("email", unique=True)
     await db.queues.create_index([("location", GEOSPHERE), ("expires_at", ASCENDING)])
-    await db.queues.create_index("created_by")
     await db.checkins.create_index([("user_id", ASCENDING), ("checked_in_at", DESCENDING)])
     await db.checkins.create_index(
         [("queue_id", ASCENDING), ("user_id", ASCENDING), ("checked_out_at", ASCENDING)]
