@@ -1,8 +1,8 @@
-// Eilės langas. Karkasas – A; <Rating /> ir <Comments /> įstato B.
-// TODO(A): check-in / check-out mygtukas
+// Eilės langas. Karkasas ir <CheckinButton /> – A; <Rating /> ir <Comments /> įstato B.
 import { useEffect, useState } from 'react'
 import { queues } from '../../api/index.js'
 import { useAuth } from '../../auth/AuthContext.jsx'
+import CheckinButton from './CheckinButton.jsx'
 import Comments from './Comments.jsx'
 import Rating from './Rating.jsx'
 
@@ -33,6 +33,13 @@ export default function QueuePanel({ queueId, onClose }) {
       <button onClick={onClose}>Uždaryti</button>
       <h2>{queue?.title ?? 'Eilė'}</h2>
       {error && <p className="form-error" role="alert">{error}</p>}
+      {queue && (
+        <CheckinButton
+          queueId={queueId}
+          activeCount={queue.active_count}
+          isCheckedIn={queue.is_checked_in}
+        />
+      )}
       {queue && (
         <Rating
           queueId={queueId}

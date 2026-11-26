@@ -33,6 +33,13 @@ body { font-family: system-ui, sans-serif; color: #1f2933; }
 .link-btn { padding: 0; border: none; background: none; color: #6b7785; font: inherit; font-size: 13px; cursor: pointer; }
 .link-btn:hover { color: #c0392b; text-decoration: underline; }
 
+.checkin { margin-top: 16px; display: flex; flex-direction: column; gap: 8px; }
+.checkin p { margin: 0; }
+.checkin-form { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.checkin-btn { padding: 8px 16px; border: 1px solid #2a9d6f; border-radius: 4px; background: #2a9d6f; color: #fff; font: inherit; cursor: pointer; }
+.checkin-btn.out { background: #fff; color: #2a9d6f; }
+.checkin-btn:disabled { cursor: default; opacity: 0.6; }
+
 .rating { margin-top: 16px; display: flex; flex-direction: column; gap: 8px; }
 .rating-summary { display: flex; align-items: center; gap: 6px; }
 .rating-mine { margin: 0; display: flex; align-items: center; gap: 6px; }
