@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
 from app.db import clickhouse, mongo, redis
-from app.routers import auth, checkins, comments, me, queues, reports, reviews
+from app.routers import auth, checkins, comments, queues, reports, reviews
 from app.services import events
 
 
@@ -42,7 +42,6 @@ app.include_router(queues.router)
 app.include_router(checkins.router)
 app.include_router(comments.router)
 app.include_router(reviews.router)
-app.include_router(me.router)
 app.include_router(reports.router)
 
 

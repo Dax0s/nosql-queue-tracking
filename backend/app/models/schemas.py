@@ -127,18 +127,6 @@ class ReviewIn(BaseModel):
     score: int = Field(ge=1, le=5)
 
 
-# --- Mano eilės ---
-
-
-class MyQueueOut(BaseModel):
-    queue_id: str
-    queue_title: str
-    checked_in_at: datetime
-    checked_out_at: datetime | None
-    duration_sec: int | None
-    my_score: int | None
-
-
 # --- Ataskaitos ---
 
 
