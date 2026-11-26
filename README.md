@@ -25,6 +25,8 @@ docker compose exec backend python seed.py
 
 Numatytuosius DB slaptažodžius galima pakeisti nukopijavus `.env.example` į `.env`.
 
+Kaip prisijungti prie Redis ir ClickHouse: [DB.md](DB.md).
+
 ## Struktūra
 
 ```

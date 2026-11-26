@@ -1,4 +1,4 @@
-# Eilių sekimo sistema
+# Eilių sekimo sistema „Low IQueue“
 
 Sistema leidžia vartotojams žemėlapyje matyti, kur šiuo metu yra eilės. Vartotojai registruoja naujas eiles, pasižymi stovintys eilėje (check-in / check-out), rašo komentarus ir vertina eiles. Eilės ryškumas heatmape priklauso nuo jos „svorio“: svoris didėja su kiekvienu veiksmu ir laikui bėgant mažėja. Sistema kaupia įvykius ir pateikia analitines ataskaitas.
 
@@ -55,13 +55,13 @@ FastAPI (backend)
 |---|---|
 | svečias | Matyti žemėlapį, eilių informaciją ir komentarus |
 | `user` | Kurti eiles, check-in / check-out, komentuoti, trinti savo komentarus, vertinti, likinti komentarus |
-| `admin` | Peržiūrėti ataskaitas |
+| `admin` | Peržiūrėti ataskaitas (eilių kurti, pasižymėti, komentuoti ir vertinti negali) |
 
 ---
 
 ## 5. Funkciniai reikalavimai
 
-- **FR1.** Vartotojai registruojasi (vardas, pavardė, gimimo metai, el. paštas, slaptažodis) ir prisijungia. Sesija saugoma Redis.
+- **FR1.** Vartotojai registruojasi (vardas, pavardė, gimimo metai, el. paštas, slaptažodis) ir prisijungia. Po registracijos vartotojas iškart prisijungęs. Sesija saugoma Redis.
 - **FR2.** Vartotojas registruoja naują eilę: nurodo pavadinimą ir vietą žemėlapyje.
 - **FR3.** Pagrindiniame puslapyje rodomas žemėlapis, jį mato ir neprisijungę vartotojai:
   - toli atitolinus rodomas heatmapas pagal eilių svorį;
@@ -78,7 +78,7 @@ FastAPI (backend)
   - vartotojas gali pasižymėti eilėje (check-in) ir iš jos išeiti (check-out);
   - vartotojas gali būti pasižymėjęs keliose eilėse vienu metu, bet toje pačioje eilėje stovėti galima tik vieną kartą (po check-out iš naujo pasižymėti negalima);
   - jei check-out nepaspaustas, laukimo laikas neskaičiuojamas.
-- **FR7.** Vartotojas gali rašyti komentarus po eile ir ištrinti savo komentarus. Per minutę galima parašyti ne daugiau kaip 5 komentarus.
+- **FR7.** Vartotojas gali rašyti komentarus po eile ir ištrinti savo komentarus. Per minutę galima parašyti ne daugiau kaip 5 komentarus (kitaip 429). Kito vartotojo komentaro ištrinti negalima (403).
 - **FR8.** Vartotojas gali įvertinti eilę (1–5) tik vieną kartą. Įvertinimo pakeisti negalima.
 - **FR9.** Vartotojas gali palikinti komentarą tik vieną kartą ir atšaukti savo liką. Savo komentaro likinti negalima.
 - **FR10.** Vartotojas gauna ženklelį pagal tai, kiek iš viso likų surinko jo komentarai. Ženklelis rodomas prie kiekvieno komentaro.
@@ -213,8 +213,8 @@ Laukas `expires_at` nurodo, kada svoris pasieks 0. Tad žemėlapio užklausa pap
 
 ### Indeksai
 - `users.email` (unique)
-- `queues`: `{ location: "2dsphere", expires_at: 1 }`, `created_by`
-- `checkins`: `{ user_id: 1, checked_in_at: -1 }`, `{ queue_id: 1, user_id: 1, checked_out_at: 1 }`
+- `queues`: `{ location: "2dsphere", expires_at: 1 }`
+- `checkins`: `{ queue_id: 1, user_id: 1, checked_out_at: 1 }`
 - `comments`: `{ queue_id: 1, created_at: -1 }`
 - `reviews`: `{ queue_id: 1, user_id: 1 }` (unique)
 
@@ -222,6 +222,7 @@ Laukas `expires_at` nurodo, kada svoris pasieks 0. Tad žemėlapio užklausa pap
 - **Vienas įvertinimas:** unikalus indeksas, antras bandymas grąžina 409. Įvertinimas didina `rating_sum` ir `rating_count`.
 - **Vienas likas:** atominis update su filtru `liked_by: { $ne: user_id }` (`$push` + `$inc`), antras bandymas grąžina 409. Likas didina `comments.likes_count` ir autoriaus `users.total_likes`, atšaukimas juos sumažina.
 - **Savo komentaro likinti negalima:** tame pačiame update filtre (`user_id: { $ne: user_id }`), 400.
+- **Liko atšaukimas:** atominis `$pull` + `$inc` su filtru `liked_by: user_id`; jei liko nėra, grąžinama 404.
 - **Komentaro trynimas:** trinamas komentaras (likai įterpti, todėl dingsta kartu), mažinamas `queues.comment_count`, o autoriaus `total_likes` sumažinamas komentaro likų skaičiumi. Eilės svoris nemažinamas.
 
 ---
@@ -235,32 +236,34 @@ Laukas `expires_at` nurodo, kada svoris pasieks 0. Tad žemėlapio užklausa pap
 | `lock:checkin:{user_id}:{queue_id}` | String (`SET NX PX 3000`) | 3 s | Apsauga nuo dvigubo check-in paspaudimo |
 | `weight:{queue_id}:{user_id}:{action}` | String | 15 min | Svorio pumpavimo apsauga |
 | `rl:comment:{user_id}` | Counter | 1 min | Ne daugiau 5 komentarų per minutę |
-| `cache:map:{zoom}:{bbox_hash}` | String (JSON) | 30 s | Žemėlapio taškai ir svoriai |
+| `cache:map:{zoom}:{south}:{west}:{north}:{east}` | String (JSON) | 30 s | Žemėlapio taškai ir svoriai (bbox suapvalintas iki tinklelio) |
 | `cache:queue:{id}` | String (JSON) | 30 s | Eilės suvestinė (įvertinimas, žmonių skaičius, vid. laukimas) |
-| `cache:queue:{id}:comments:{page}` | String (JSON) | 30 s | Komentarai su ženkleliais |
+| `cache:queue:{id}:comments:{page}` | String (JSON) | 5 s | Komentarai su ženkleliais (be `liked_by_me`) |
 | `cache:badges` | String (JSON) | 1 h | Ženklelių lygiai |
 | `cache:report:{name}:{params}` | String (JSON) | 10 min | Ataskaitos |
 
 **Žmonių skaičius eilėje:** `SCARD queue:{id}:active`. Kiekvieną kartą atnaujinus eilės svorį, rinkiniui nustatomas `EXPIREAT <expires_at>`, todėl eilei dingus iš žemėlapio dingsta ir jos aktyvių žmonių rinkinys.
 
-**Žemėlapio cache raktas:** `bbox` suapvalinamas iki tinklelio (pagal zoom), kad skirtingi vartotojai, žiūrintys į tą pačią vietą, naudotų tą patį raktą.
+**Žemėlapio cache raktas:** `bbox` suapvalinamas iki tinklelio (langelis `360 / 2^zoom` laipsnių), kad skirtingi vartotojai, žiūrintys į tą pačią vietą, naudotų tą patį raktą.
 
-**Eilės suvestinė:** bendra dalis imama iš `cache:queue:{id}`, o prisijungusio vartotojo būsena (ar jis eilėje: `SISMEMBER`; ar jau įvertino) pridedama kiekvienai užklausai atskirai.
+**Žemėlapio užklausa:** `expires_at > dabar` ir `$geoWithin` su bbox kaip GeoJSON poligonu (`$box` nenaudoja 2dsphere indekso). Poligono kraštinės tankinamos kas 1°, kad sektų platumą. Labai atitolinus (bbox platesnis nei 90°) geo filtras nenaudojamas, o bbox tikrinamas backend'e.
 
-**Cache invalidavimas:** po check-in, check-out, įvertinimo, komentaro sukūrimo ar ištrynimo trinamas `cache:queue:{id}` ir pirmas komentarų puslapis. Žemėlapio cache tiesiog pasibaigia po 30 s.
+**Eilės suvestinė:** bendra dalis imama iš `cache:queue:{id}`, o prisijungusio vartotojo būsena (ar jis eilėje: `SISMEMBER`; ar jau stovėjo šioje eilėje: `has_waited`; ar jau įvertino: `my_score`) pridedama kiekvienai užklausai atskirai. Cache'e laikomi pradiniai `weight` ir `weight_updated_at`, o dabartinis svoris perskaičiuojamas kiekvienai užklausai.
+
+**Cache invalidavimas:** po check-in, check-out, įvertinimo, komentaro sukūrimo ar ištrynimo trinamas `cache:queue:{id}` ir pirmas komentarų puslapis. Po liko ar jo atšaukimo trinamas tik pirmas komentarų puslapis. Žemėlapio cache tiesiog pasibaigia po 30 s.
 
 **Check-in eiga:**
-1. `SET lock:checkin:{user}:{queue} NX PX 3000`. Jei nepavyko, grąžinama 409.
-2. Tikrinama, ar eilė matoma (`expires_at > dabar`).
+1. `SET lock:checkin:{user}:{queue} NX PX 3000`. Jei nepavyko, grąžinama 409. Užraktą atlaisvina tik jį paėmęs (Lua skriptas lygina reikšmę).
+2. Jei eilės nėra, grąžinama 404. Jei ji nematoma (`expires_at <= dabar`), grąžinama 409.
 3. Jei `SISMEMBER queue:{id}:active user` grąžina taip, grąžinama 409. Jei `checkins` jau yra šio vartotojo įrašas šiai eilei (jau stovėjo), irgi 409.
-4. Sukuriamas `checkins` įrašas ir vykdomas `SADD queue:{id}:active user`.
+4. Sukuriamas `checkins` įrašas ir vienoje transakcijoje vykdoma `SADD queue:{id}:active user`, `EXPIREAT … NX` (naujam rinkiniui) ir `EXPIREAT … GT` (pratęsia esamą).
 5. Jei `weight:{queue}:{user}:checkin` nustatomas sėkmingai, pridedamas svoris.
 6. Trinamas `cache:queue:{id}`, siunčiamas `checkin` įvykis, užraktas atlaisvinamas.
 
 **Check-out eiga:**
-1. Jei vartotojo nėra `queue:{id}:active`, grąžinama 409.
-2. Paskutiniam atviram vartotojo check-in toje eilėje įrašomas `checked_out_at`.
-3. Vykdomas `SREM`, trinamas `cache:queue:{id}`, siunčiamas `checkout` įvykis su `duration_sec`.
+1. Vykdomas `SREM queue:{id}:active user`. Jei grąžina 0 (vartotojo nėra), grąžinama 409. `SREM` atominis, todėl dvigubas paspaudimas antrą kartą gauna 409 ir užraktas nereikalingas.
+2. Paskutiniam atviram vartotojo check-in toje eilėje įrašomas `checked_out_at`. Jei atviro įrašo nėra (Redis ir MongoDB išsiskyrė), grąžinama 409.
+3. Trinamas `cache:queue:{id}`, siunčiamas `checkout` įvykis su `duration_sec`.
 
 **Žinomas apribojimas:** jei vartotojas nepaspaudžia check-out, jis skaičiuojamas tarp eilėje stovinčių, kol eilė dingsta iš žemėlapio.
 
@@ -286,7 +289,9 @@ ENGINE = MergeTree
 PARTITION BY toYYYYMM(event_time)
 ORDER BY (event_type, event_time);
 ```
-Įvykiai rašomi su `async_insert = 1`, kad ClickHouse pats grupuotų smulkius įrašus.
+Įvykiai rašomi su `async_insert = 1` (`wait_for_async_insert = 0`), kad ClickHouse pats grupuotų smulkius įrašus. `track_event` neblokuoja užklausos: įrašas vykdomas fone (timeout 5 s, ne daugiau 1000 laukiančių), o klaidos tik įrašomos į logą. Jei `user_age` neperduotas, jis apskaičiuojamas iš vartotojo `birth_year`. Svečio `queue_view` įvykis turi tuščią `user_id`.
+
+Ataskaitose dienos, savaitės, savaitės dienos ir valandos skaičiuojamos laiko juostoje `Europe/Vilnius`. Periodų ataskaitose tušti periodai užpildomi nuliais (`WITH FILL`).
 
 ### Ataskaitos
 
@@ -348,13 +353,18 @@ ORDER BY weekday, hour;
 | DELETE | `/comments/{id}/like` | user |
 | POST | `/queues/{id}/review` | user |
 
+### Sistema
+| Metodas | Kelias | Rolė |
+|---|---|---|
+| GET | `/health` | visi (MongoDB, Redis ir ClickHouse jungčių būsena) |
+
 ### Ataskaitos (visos cache'inamos)
 | Metodas | Kelias | Rolė |
 |---|---|---|
 | GET | `/reports/activity?period=day\|week\|month&from=&to=` | admin |
 | GET | `/reports/checkins?period=day\|week\|month&from=&to=` | admin |
 | GET | `/reports/wait-times?queue_id=` | admin |
-| GET | `/reports/popular-queues?days=7` | admin |
+| GET | `/reports/popular-queues?days=7&sort_by=views\|checkins&limit=10` | admin |
 | GET | `/reports/checkout-rate?from=&to=` | admin |
 | GET | `/reports/activity-by-age` | admin |
 
@@ -366,7 +376,7 @@ ORDER BY weekday, hour;
 2. **Pagrindinis puslapis (žemėlapis):**
    - heatmapas (`leaflet.heat`), o priartinus nuo zoom 15 rodomi pinai;
    - užklausa `/queues/map` siunčiama pajudinus žemėlapį (su debounce) ir kas 30 s;
-   - mygtukas „Nauja eilė“: paspaudžiama vieta žemėlapyje ir įvedamas pavadinimas.
+   - nauja eilė kuriama paspaudus vietą žemėlapyje: atsidaro iššokantis langas, kuriame įvedamas pavadinimas (tik `user` rolei).
 3. **Eilės langas** (atsidaro paspaudus piną): informacija, check-in / check-out mygtukas, žvaigždučių įvertinimas, komentarų sąrašas su ženkleliais ir likais, komentaro forma.
 4. **Ataskaitų puslapis** (tik admin): lentelės ir grafikai, pvz., Recharts.
 
@@ -375,8 +385,9 @@ ORDER BY weekday, hour;
 ## 12. Projekto struktūra
 
 ```
-queues/
+./
 ├── docker-compose.yml
+├── .env.example
 ├── README.md
 ├── backend/
 │   ├── Dockerfile
@@ -389,7 +400,7 @@ queues/
 │       ├── auth/        # sesijos, get_current_user, require_role
 │       ├── models/      # Pydantic schemos
 │       ├── routers/     # auth, queues, checkins, comments, reviews, reports
-│       ├── services/    # svoris, check-in logika, cache, užraktai, įvykiai
+│       ├── services/    # weight.py, events.py, cache.py, locks.py
 │       └── clickhouse/  # init.sql
 └── frontend/
     ├── Dockerfile
@@ -457,4 +468,9 @@ Danielius:
 - Commit'ai maži ir aiškiai pavadinti, kad istorijoje matytųsi abiejų indėlis.
 
 ### Seed duomenys
-`seed.py`: ~1000 vartotojų, ~500 eilių, ~20 000 check-in, ~10 000 komentarų, ženkleliai, ~100 000 įvykių per 6 mėnesius. Dalis veiklos turi būti per paskutines kelias valandas, kad žemėlapyje matytųsi eilės.
+`seed.py` (`docker compose exec backend python seed.py`) prieš pildydamas išvalo MongoDB kolekcijas, ClickHouse `events` ir Redis eilių / cache raktus (sesijos lieka). Sukuria:
+- 1000 vartotojų, tarp jų `user@example.com` ir `admin@example.com` (slaptažodis `password`);
+- 500 eilių prie realių gatvių ir prekybos centrų 5 miestuose; 80 jų matomos žemėlapyje dabar;
+- 20 000 check-in (400 aktyvių dabar, įrašyti ir į Redis; vienas vartotojas eilėje tik kartą), laukimo laikas ilgesnis piko valandomis;
+- 10 000 komentarų su ~25 000 likų, 5000 įvertinimų; skaitikliai (`total_likes`, `comment_count`, `rating_*`) suderinti;
+- 4 ženklelius ir ~138 000 ClickHouse įvykių per 6 mėnesius, sugeneruotų iš tų pačių duomenų.
