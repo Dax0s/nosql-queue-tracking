@@ -2,7 +2,6 @@ import { Link, Navigate, Route, Routes } from 'react-router-dom'
 import { useAuth } from './auth/AuthContext.jsx'
 import LoginPage from './pages/LoginPage.jsx'
 import MapPage from './pages/MapPage.jsx'
-import MyQueuesPage from './pages/MyQueuesPage.jsx'
 import RegisterPage from './pages/RegisterPage.jsx'
 import ReportsPage from './pages/ReportsPage.jsx'
 
@@ -39,7 +38,6 @@ export default function App() {
           <Route path="/" element={<MapPage />} />
           <Route path="/login" element={<LoginPage />} />
           <Route path="/register" element={<RegisterPage />} />
-          <Route path="/my-queues" element={<RequireRole role="user"><MyQueuesPage /></RequireRole>} />
           <Route path="/reports" element={<RequireRole role="admin"><ReportsPage /></RequireRole>} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

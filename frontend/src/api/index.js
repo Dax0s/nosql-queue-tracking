@@ -25,10 +25,6 @@ export const comments = {
   unlike: (id) => api.delete(`/comments/${id}/like`),
 }
 
-export const me = {
-  queues: (page = 1) => api.get('/me/queues', { page }),
-}
-
 export const reports = {
   activity: (params) => api.get('/reports/activity', params),
   checkins: (params) => api.get('/reports/checkins', params),

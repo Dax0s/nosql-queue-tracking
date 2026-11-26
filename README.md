@@ -38,14 +38,14 @@ backend/
     db/            # mongo.py (+ indeksai), redis.py, clickhouse.py
     auth/          # sessions.py (Redis sesijos), deps.py (CurrentUser, UserOnly, AdminOnly)
     models/        # Pydantic schemos
-    routers/       # auth, queues, checkins, comments, reviews, me, reports
+    routers/       # auth, queues, checkins, comments, reviews, reports
     services/      # weight (add_weight), events (track_event), cache, locks
     clickhouse/    # init.sql
 frontend/
   src/
     api/           # client.js (fetch + Bearer token), index.js (visi endpoint'ai)
     auth/          # AuthContext
-    pages/         # Map, Login, Register, MyQueues, Reports
+    pages/         # Map, Login, Register, Reports
     components/    # Map/MapView, QueuePanel/QueuePanel
 ```
 

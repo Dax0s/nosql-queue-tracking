@@ -82,7 +82,6 @@ FastAPI (backend)
 - **FR8.** Vartotojas gali įvertinti eilę (1–5) tik vieną kartą. Įvertinimo pakeisti negalima.
 - **FR9.** Vartotojas gali palikinti komentarą tik vieną kartą ir atšaukti savo liką. Savo komentaro likinti negalima.
 - **FR10.** Vartotojas gauna ženklelį pagal tai, kiek iš viso likų surinko jo komentarai. Ženklelis rodomas prie kiekvieno komentaro.
-- **FR11.** *(Jei spėsim; neįgyvendinta)* Puslapis „Mano eilės“: visos eilės, kuriose vartotojas stovėjo, su stovėjimo trukme (jei žinoma), savo įvertinimu ir komentarais. Šiuo metu `/me/queues` grąžina 501, o nuorodos meniu nėra.
 - **FR12.** Sistema kaupia įvykius ClickHouse: registraciją, prisijungimą, eilės sukūrimą, pino paspaudimą (eilės peržiūrą), check-in, check-out, komentarą, įvertinimą, komentaro liką.
 - **FR13.** Administratorius mato ataskaitas (žr. 9 skyrių).
 
@@ -354,11 +353,6 @@ ORDER BY weekday, hour;
 | DELETE | `/comments/{id}/like` | user |
 | POST | `/queues/{id}/review` | user |
 
-### Vartotojas
-| Metodas | Kelias | Rolė |
-|---|---|---|
-| GET | `/me/queues?page=` | user (*jei spėsim*; dabar 501) |
-
 ### Sistema
 | Metodas | Kelias | Rolė |
 |---|---|---|
@@ -384,8 +378,7 @@ ORDER BY weekday, hour;
    - užklausa `/queues/map` siunčiama pajudinus žemėlapį (su debounce) ir kas 30 s;
    - nauja eilė kuriama paspaudus vietą žemėlapyje: atsidaro iššokantis langas, kuriame įvedamas pavadinimas (tik `user` rolei).
 3. **Eilės langas** (atsidaro paspaudus piną): informacija, check-in / check-out mygtukas, žvaigždučių įvertinimas, komentarų sąrašas su ženkleliais ir likais, komentaro forma.
-4. **Mano eilės** *(jei spėsim)*: maršrutas `/my-queues` yra, bet puslapis tuščias ir nuorodos meniu nėra.
-5. **Ataskaitų puslapis** (tik admin): lentelės ir grafikai, pvz., Recharts.
+4. **Ataskaitų puslapis** (tik admin): lentelės ir grafikai, pvz., Recharts.
 
 ---
 
@@ -406,7 +399,7 @@ ORDER BY weekday, hour;
 │       ├── db/          # mongo.py, redis.py, clickhouse.py
 │       ├── auth/        # sesijos, get_current_user, require_role
 │       ├── models/      # Pydantic schemos
-│       ├── routers/     # auth, queues, checkins, comments, reviews, me, reports
+│       ├── routers/     # auth, queues, checkins, comments, reviews, reports
 │       ├── services/    # weight.py, events.py, cache.py, locks.py
 │       └── clickhouse/  # init.sql
 └── frontend/
@@ -466,7 +459,6 @@ Danielius:
 
 ### Etapas 3. Kartu
 - Integracija ir testavimas su seed duomenimis.
-- „Mano eilės“ (jei spėsim; daro tas, kas pirmas baigs savo dalį).
 - README, Swagger aprašymų patikrinimas.
 - Pasiruošimas gynimui: kiekvienas papasakoja savo dalį kitam.
 
