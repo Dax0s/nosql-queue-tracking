@@ -3,7 +3,7 @@
 from datetime import datetime, timezone
 
 from bson import ObjectId
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException
 from pymongo import ReturnDocument
 from pymongo.errors import DuplicateKeyError
 
@@ -15,8 +15,6 @@ from app.services.events import track_event
 from app.services.weight import add_weight
 
 router = APIRouter(prefix="/queues", tags=["Įvertinimai"])
-
-_TODO = HTTPException(status.HTTP_501_NOT_IMPLEMENTED, "Dar neįgyvendinta")
 
 
 @router.post("/{queue_id}/review", status_code=201, summary="Įvertinti eilę (1–5, tik kartą)")
