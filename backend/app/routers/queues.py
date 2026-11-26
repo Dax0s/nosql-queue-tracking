@@ -158,6 +158,7 @@ async def create_queue(body: QueueCreateIn, user: UserOnly):
         avg_wait_sec=None,
         wait_samples=0,
         is_checked_in=False,
+        has_waited=False,
         my_score=None,
     )
 
@@ -244,14 +245,15 @@ async def get_queue(queue_id: str, user: OptionalUser):
     )
 
     # Vartotojo būsena – ne cache'e, nes cache bendras visiems
-    is_checked_in = my_score = None
+    is_checked_in = has_waited = my_score = None
     if user is not None:
+        db = get_db()
+        mine = {"queue_id": ObjectId(queue_id), "user_id": ObjectId(user.user_id)}
         is_checked_in = bool(
             await get_redis().sismember(f"queue:{queue_id}:active", user.user_id)
         )
-        review = await get_db().reviews.find_one(
-            {"queue_id": ObjectId(queue_id), "user_id": ObjectId(user.user_id)}, {"score": 1}
-        )
+        has_waited = is_checked_in or await db.checkins.find_one(mine, {"_id": 1}) is not None
+        review = await db.reviews.find_one(mine, {"score": 1})
         my_score = review["score"] if review else None
 
     await track_event(
@@ -262,4 +264,6 @@ async def get_queue(queue_id: str, user: OptionalUser):
         lng=summary["lng"],
     )
 
-    return QueueOut(**summary, is_checked_in=is_checked_in, my_score=my_score)
+    return QueueOut(
+        **summary, is_checked_in=is_checked_in, has_waited=has_waited, my_score=my_score
+    )

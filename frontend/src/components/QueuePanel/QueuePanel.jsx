@@ -38,6 +38,9 @@ export default function QueuePanel({ queueId, onClose }) {
           queueId={queueId}
           activeCount={queue.active_count}
           isCheckedIn={queue.is_checked_in}
+          hasWaited={queue.has_waited}
+          avgWaitSec={queue.avg_wait_sec}
+          waitSamples={queue.wait_samples}
         />
       )}
       {queue && (

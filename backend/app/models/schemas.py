@@ -69,6 +69,9 @@ class QueueOut(BaseModel):
     wait_samples: int
     # Prisijungusio vartotojo būsena (svečiui None)
     is_checked_in: bool | None = None
+    has_waited: bool | None = Field(
+        default=None, description="Ar vartotojas jau stovėjo šioje eilėje (antras check-in negalimas)"
+    )
     my_score: int | None = None
 
 
